@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ms.LAM English</title>
-    <script src="https://script.google.com/macros/s/AKfycbyKOfWXYDqR9RQz7jPflR8SArKU1HtAdl58NyMrsSv96XbycUo-jfEUOWP3UjHeVe53Tg/exec"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary: #4F46E5;
@@ -316,6 +316,68 @@
         let selectedStudentIds = new Set();
         let targetStudentId = null;
 
+        function setSyncStatus(isSynced, text) {
+            const dot = document.getElementById('sync-dot');
+            const label = document.getElementById('sync-text');
+            if (isSynced) {
+                dot.classList.add('active');
+                label.innerText = text || "已連線至雲端試算表";
+            } else {
+                dot.classList.remove('active');
+                label.innerText = text || "正在連線雲端...";
+            }
+        }
+
+        async function loadDataFromCloud() {
+            if (!GAS_URL || GAS_URL.trim() === "") return;
+            setSyncStatus(false, "與雲端同步中...");
+            try {
+                const res = await fetch(GAS_URL, { redirect: "follow" });
+                const text = await res.text();
+                
+                if (text && text.trim() !== "" && text !== "{}") {
+                    const data = JSON.parse(text);
+                    if (data.studentsByClass) studentsByClass = data.studentsByClass;
+                    if (data.rewards) rewards = data.rewards;
+                    if (data.behaviors) behaviors = data.behaviors;
+                    if (data.logs) logs = data.logs;
+                    
+                    localStorage.setItem('v6_students_class', JSON.stringify(studentsByClass));
+                    localStorage.setItem('v6_rewards', JSON.stringify(rewards));
+                    localStorage.setItem('v6_behaviors', JSON.stringify(behaviors));
+                    localStorage.setItem('v6_logs', JSON.stringify(logs));
+                    renderStudents();
+                    renderBehaviors();
+                }
+                setSyncStatus(true, "已連線至雲端試算表");
+            } catch (e) {
+                console.error("雲端載入失敗", e);
+                setSyncStatus(false, "離線模式（僅在本機）");
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem('v6_students_class', JSON.stringify(studentsByClass));
+            localStorage.setItem('v6_rewards', JSON.stringify(rewards));
+            localStorage.setItem('v6_behaviors', JSON.stringify(behaviors));
+            localStorage.setItem('v6_logs', JSON.stringify(logs));
+
+            if (!GAS_URL || GAS_URL.trim() === "") return;
+            setSyncStatus(false, "同步中...");
+
+            fetch(GAS_URL, {
+                method: "POST",
+                mode: "no-cors",
+                headers: { "Content-Type": "text/plain;charset=utf-8" },
+                body: JSON.stringify({ studentsByClass, rewards, behaviors, logs })
+            }).then(() => {
+                setSyncStatus(true, "已連線至雲端試算表");
+            }).catch(err => {
+                console.error("同步失敗:", err);
+                setSyncStatus(false, "同步失敗 (使用本機快取)");
+            });
+        }
+
         function getStudents() {
             if (!studentsByClass[currentClassId]) studentsByClass[currentClassId] = [];
             return studentsByClass[currentClassId];
@@ -333,20 +395,6 @@
 
             renderStudents();
             renderRoster();
-        }
-
-        function saveData() {
-            localStorage.setItem('v6_students_class', JSON.stringify(studentsByClass));
-            localStorage.setItem('v6_rewards', JSON.stringify(rewards));
-            localStorage.setItem('v6_behaviors', JSON.stringify(behaviors));
-            localStorage.setItem('v6_logs', JSON.stringify(logs));
-
-            if (!GAS_URL) return;
-            fetch(GAS_URL, {
-                method: "POST", mode: "no-cors",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ studentsByClass, rewards, behaviors, logs })
-            });
         }
 
         function renderStudents() {
@@ -436,7 +484,6 @@
             });
         }
 
-        /* 模態視窗與選單渲染機制 */
         function openSingleModal(id) {
             targetStudentId = id;
             const s = getStudents().find(x => x.id === id);
@@ -520,7 +567,6 @@
             if (tab === 'logs') renderLogs();
         }
 
-        /* 初始化選項 */
         (function initAvatarOptions() {
             const sel = document.getElementById('new-avatar');
             AVATAR_GROUPS.forEach(g => {
@@ -537,6 +583,7 @@
 
         renderStudents();
         renderBehaviors();
+        loadDataFromCloud();
     </script>
 </body>
 </html>
